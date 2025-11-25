@@ -2,8 +2,6 @@ streamlit
 requests
 beautifulsoup4
 openai-whisper
-openai
 tqdm
 torch==2.9.1
 transformers
-
