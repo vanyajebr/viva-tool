@@ -5,12 +5,12 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 import whisper
-from openai import OpenAI
+from transformers import pipeline
 import csv
 from tqdm import tqdm
 
-# Initialize OpenAI client once
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Load summarization pipeline locally once at startup
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 
 def sanitize_filename(s):
     return re.sub(r'[<>:"/\\|?* ]', '_', s)
@@ -68,21 +68,9 @@ def transcribe_audio(model, path):
     return result["text"]
 
 def summarize_text(text):
-    prompt = (
-        "You are an expert mortgage advisor assistant. "
-        "Summarize this client call transcript briefly (2-5 sentences for short calls, 5-10 for longer):\n\n"
-        f"{text}\n\nSummary:"
-    )
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant specialized in mortgage advising."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.5,
-        max_tokens=200,
-    )
-    return response.choices[0].message.content.strip()
+    # Use local summarization pipeline
+    summaries = summarizer(text, max_length=150, min_length=40, do_sample=False)
+    return summaries[0]['summary_text']
 
 st.title("Mortgage Call Downloader, Transcriber & Summarizer")
 
@@ -127,4 +115,3 @@ if uploaded_html and cookie_name and cookie_value:
 
             st.success("Processing complete! Download CSV below.")
             st.download_button("Download CSV", data=open(csv_path, "r", encoding="utf-8").read(), file_name=csv_path)
-
