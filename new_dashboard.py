@@ -98,7 +98,7 @@ if uploaded_html and cookie_name and cookie_value:
     if st.button("Download recordings & process"):
         session = requests.Session()
         session.cookies.set(cookie_name, cookie_value, domain=".voipfone.co.uk")
-        model = whisper.load_model("large")
+        model = whisper.load_model("small")
         results = []
         progress_bar = st.progress(0)
 
@@ -127,3 +127,4 @@ if uploaded_html and cookie_name and cookie_value:
 
             st.success("Processing complete! Download CSV below.")
             st.download_button("Download CSV", data=open(csv_path, "r", encoding="utf-8").read(), file_name=csv_path)
+
