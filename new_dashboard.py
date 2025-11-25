@@ -7,11 +7,16 @@ from bs4 import BeautifulSoup
 import whisper
 from transformers import pipeline
 import csv
-from tqdm import tqdm
 
-# Load smaller summarization model at startup
-# Using distilbart-cnn-12-6 instead of facebook/bart-large-cnn for faster, lighter summarization
-summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+# Ensure temp folder exists early
+os.makedirs("temp_recordings", exist_ok=True)
+
+# Load summarization pipeline once; handle model load errors
+try:
+    summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+except Exception as e:
+    st.error(f"Error loading summarization model: {e}")
+    st.stop()
 
 def sanitize_filename(s):
     return re.sub(r'[<>:"/\\|?* ]', '_', s)
@@ -52,8 +57,6 @@ def parse_html_calls(html_content):
 def download_audio(session, call):
     fn = f"{sanitize_filename(call['date_time'])}_{call['from_number']}_{call['to_number']}_{call['user_tag']}_{call['data_id']}.mp3"
     filepath = os.path.join("temp_recordings", fn)
-    if not os.path.exists("temp_recordings"):
-        os.makedirs("temp_recordings")
     if os.path.exists(filepath):
         return filepath
     url = f"https://controlpanel.voipfone.co.uk/api/srv?callRecordingsGetFile/{call['data_id']}.mp3"
@@ -65,13 +68,25 @@ def download_audio(session, call):
     return filepath
 
 def transcribe_audio(model, path):
-    result = model.transcribe(path, task="translate")
-    return result["text"]
+    try:
+        result = model.transcribe(path, task="translate")
+        text = result.get("text", "")
+        return text.strip()
+    except Exception as e:
+        st.error(f"Transcription error on {path}: {e}")
+        return ""
 
 def summarize_text(text):
-    # Using lightweight summarizer with shorter max length
-    summaries = summarizer(text, max_length=80, min_length=30, do_sample=False)
-    return summaries[0]['summary_text']
+    if not text:
+        return "No transcript available"
+    # Limit size to ~1000 chars to avoid errors in summarizer
+    text = text[:1000]
+    try:
+        summaries = summarizer(text, max_length=80, min_length=30, do_sample=False)
+        return summaries[0]['summary_text']
+    except Exception as e:
+        st.error(f"Summarization error: {e}")
+        return "Error in summarization"
 
 st.title("Mortgage Call Downloader, Transcriber & Summarizer")
 
@@ -87,10 +102,15 @@ if uploaded_html and cookie_name and cookie_value:
     if st.button("Download recordings & process"):
         session = requests.Session()
         session.cookies.set(cookie_name, cookie_value, domain=".voipfone.co.uk")
-        model = whisper.load_model("tiny")  # smaller Whisper model to save resources
-        
+
+        try:
+            model = whisper.load_model("tiny")
+        except Exception as e:
+            st.error(f"Error loading Whisper model: {e}")
+            st.stop()
+
         csv_path = "calls_summary.csv"
-        # Open CSV for append, write header if file doesn't exist
+        # Open CSV for append, write header if missing
         if not os.path.exists(csv_path):
             with open(csv_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=["Date (+time)", "From", "To", "Summary"])
