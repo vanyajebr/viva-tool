@@ -9,8 +9,9 @@ from transformers import pipeline
 import csv
 from tqdm import tqdm
 
-# Load summarization pipeline locally once at startup
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+# Load smaller summarization model at startup
+# Using distilbart-cnn-12-6 instead of facebook/bart-large-cnn for faster, lighter summarization
+summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 def sanitize_filename(s):
     return re.sub(r'[<>:"/\\|?* ]', '_', s)
@@ -68,8 +69,8 @@ def transcribe_audio(model, path):
     return result["text"]
 
 def summarize_text(text):
-    # Use local summarization pipeline
-    summaries = summarizer(text, max_length=150, min_length=40, do_sample=False)
+    # Using lightweight summarizer with shorter max length
+    summaries = summarizer(text, max_length=80, min_length=30, do_sample=False)
     return summaries[0]['summary_text']
 
 st.title("Mortgage Call Downloader, Transcriber & Summarizer")
@@ -86,8 +87,15 @@ if uploaded_html and cookie_name and cookie_value:
     if st.button("Download recordings & process"):
         session = requests.Session()
         session.cookies.set(cookie_name, cookie_value, domain=".voipfone.co.uk")
-        model = whisper.load_model("small")
-        results = []
+        model = whisper.load_model("tiny")  # smaller Whisper model to save resources
+        
+        csv_path = "calls_summary.csv"
+        # Open CSV for append, write header if file doesn't exist
+        if not os.path.exists(csv_path):
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["Date (+time)", "From", "To", "Summary"])
+                writer.writeheader()
+
         progress_bar = st.progress(0)
 
         for i, call in enumerate(calls):
@@ -96,22 +104,19 @@ if uploaded_html and cookie_name and cookie_value:
                 mp3_path = download_audio(session, call)
                 transcript = transcribe_audio(model, mp3_path)
                 summary = summarize_text(transcript)
-                results.append({
-                    "Date (+time)": call["date_time"],
-                    "From": call["from_number"],
-                    "To": call["to_number"],
-                    "Summary": summary
-                })
+
+                with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=["Date (+time)", "From", "To", "Summary"])
+                    writer.writerow({
+                        "Date (+time)": call["date_time"],
+                        "From": call["from_number"],
+                        "To": call["to_number"],
+                        "Summary": summary
+                    })
             except Exception as e:
                 st.error(f"Error processing call {call['data_id']}: {e}")
             progress_bar.progress((i + 1) / len(calls))
 
-        if results:
-            csv_path = "calls_summary.csv"
-            with open(csv_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=["Date (+time)", "From", "To", "Summary"])
-                writer.writeheader()
-                writer.writerows(results)
-
-            st.success("Processing complete! Download CSV below.")
-            st.download_button("Download CSV", data=open(csv_path, "r", encoding="utf-8").read(), file_name=csv_path)
+        st.success("Processing complete! Download CSV below.")
+        with open(csv_path, "r", encoding="utf-8") as f:
+            st.download_button("Download CSV", data=f.read(), file_name=csv_path)
