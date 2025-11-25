@@ -1,0 +1,6 @@
+streamlit
+whisper
+openai
+requests
+tqdm
+beautifulsoup4
