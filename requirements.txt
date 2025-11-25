@@ -4,7 +4,3 @@ openai
 requests
 tqdm
 beautifulsoup4
-torch
-torchvision
-torchaudio
-pytorch
